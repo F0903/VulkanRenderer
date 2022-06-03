@@ -20,6 +20,8 @@
 #include <limits>
 #include <algorithm>
 #include <fstream>
+#include <span>
+#include <map>
 
 using namespace vk;
 
@@ -274,13 +276,29 @@ SwapChainSupportDetails querySwapchainSupport(const vk::PhysicalDevice& device) 
 	return details;
 }
 
-const bool isDeviceSuitable(const vk::PhysicalDevice& device) {
-	const auto extensionsSupported = checkDeviceExtensionSupport(device);
-	if (!extensionsSupported) return false;
-	const auto swapChainSupport = querySwapchainSupport(device);
-	const auto isSwapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
-	const auto indices = findQueueFamilies(device);
-	return indices.isComplete() && extensionsSupported && isSwapChainAdequate;
+const std::multimap<int, PhysicalDevice, std::greater<int>> scoreDevices(const std::span<PhysicalDevice> devices) {
+	std::multimap<int, PhysicalDevice, std::greater<int>> sortedDevices;
+	for (const auto& device : devices)
+	{
+		int points = 0;
+
+		const auto swapChainSupport = querySwapchainSupport(device);
+		const auto isSwapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+		const auto indices = findQueueFamilies(device);
+		const auto extensionsSupported = checkDeviceExtensionSupport(device);
+		if (!indices.isComplete() || !extensionsSupported || !isSwapChainAdequate) continue;
+
+		const auto deviceProps = device.getProperties();
+		if (deviceProps.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+			points += 10000;
+
+		const auto& deviceLimits = deviceProps.limits;
+		points += deviceLimits.maxFramebufferHeight;
+		points += deviceLimits.maxFramebufferWidth;
+
+		sortedDevices.insert({ points, device });
+	}
+	return sortedDevices;
 }
 
 vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
@@ -340,14 +358,11 @@ void pickPhysicalDevice() {
 	vk::PhysicalDevice device = VK_NULL_HANDLE;
 
 	auto devices = instance.enumeratePhysicalDevices();
-	device = (devices | std::views::filter(isDeviceSuitable)).front();
+	auto sortedDevices = scoreDevices(devices);
+	auto sortedDevicePair = *sortedDevices.begin();
+	device = sortedDevicePair.second;
 	auto deviceProps = device.getProperties();
 	std::cout << std::format("Picked suitable device '{}' with API version {}", deviceProps.deviceName, getApiVersionString(deviceProps.apiVersion)) << std::endl;
-
-	if (device.operator==(VK_NULL_HANDLE)) {
-		throw std::runtime_error("Could not find suitable device!");
-	}
-
 	physicalDevice = device;
 }
 
