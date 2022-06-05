@@ -638,6 +638,8 @@ void createRenderPass() {
 
 	vk::SubpassDescription subpass{};
 	subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
 
 	vk::SubpassDependency dependency{};
 	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
