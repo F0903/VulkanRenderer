@@ -45,9 +45,9 @@ constexpr uint32_t WIDTH = 800, HEIGHT = 600;
 
 GLFWwindow* window;
 
-VkDebugUtilsMessengerEXT debugMessenger;
-
 vk::Instance instance;
+VkDebugUtilsMessengerEXT debugMessenger;
+vk::SurfaceKHR surface;
 
 vk::PhysicalDevice physicalDevice;
 vk::Device device;
@@ -55,16 +55,17 @@ vk::Device device;
 vk::Queue graphicsQueue;
 vk::Queue presentQueue;
 
-vk::SurfaceKHR surface;
 vk::SwapchainKHR swapchain;
 std::vector<vk::Image> swapchainImages;
 vk::Format swapchainImageFormat;
 vk::Extent2D swapchainExtent;
 std::vector<vk::ImageView> swapchainImageViews;
+std::vector<vk::Framebuffer> swapchainFramebuffers;
+
 vk::PipelineLayout pipelineLayout;
 vk::RenderPass renderPass;
 vk::Pipeline graphicsPipeline;
-std::vector<vk::Framebuffer> swapchainFramebuffers;
+
 vk::CommandPool commandPool;
 vk::CommandBuffer commandBuffer;
 
@@ -183,7 +184,7 @@ void createInstance() {
 	appInfo.sType = vk::StructureType::eApplicationInfo;
 	appInfo.pApplicationName = "Vulkan Test";
 	appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-	appInfo.pEngineName = "None";
+	appInfo.pEngineName = "No Engine";
 	appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 	appInfo.apiVersion = VK_API_VERSION_1_0;
 
@@ -276,8 +277,9 @@ SwapChainSupportDetails querySwapchainSupport(const vk::PhysicalDevice& device) 
 	return details;
 }
 
-const std::multimap<int, PhysicalDevice, std::greater<int>> scoreDevices(const std::span<PhysicalDevice> devices) {
-	std::multimap<int, PhysicalDevice, std::greater<int>> sortedDevices;
+using SortedDeviceMap = std::multimap<int, PhysicalDevice, std::greater<int>>;
+const SortedDeviceMap scoreDevices(const std::span<PhysicalDevice> devices) {
+	SortedDeviceMap sortedDevices;
 	for (const auto& device : devices)
 	{
 		int points = 0;
@@ -458,7 +460,10 @@ void createSwapchain() {
 		throw std::runtime_error("Failed to create swapchain!");
 	}
 
-	swapchainImages = device.getSwapchainImagesKHR(swapchain);
+	device.getSwapchainImagesKHR(swapchain, &imageCount, nullptr);
+	swapchainImages.resize(imageCount);
+	device.getSwapchainImagesKHR(swapchain, &imageCount, swapchainImages.data());
+
 	swapchainImageFormat = surfaceFormat.format;
 	swapchainExtent = extent;
 }
@@ -526,10 +531,8 @@ void createGraphicsPipeline() {
 
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = vk::StructureType::ePipelineVertexInputStateCreateInfo;
-	vertexInputInfo.vertexBindingDescriptionCount = 0;
-	vertexInputInfo.pVertexBindingDescriptions = nullptr;
-	vertexInputInfo.vertexAttributeDescriptionCount = 0;
-	vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+	vertexInputInfo.vertexBindingDescriptionCount = 0; 
+	vertexInputInfo.vertexAttributeDescriptionCount = 0; 
 
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
 	inputAssembly.sType = vk::StructureType::ePipelineInputAssemblyStateCreateInfo;
@@ -568,11 +571,7 @@ void createGraphicsPipeline() {
 	vk::PipelineMultisampleStateCreateInfo multisampling{};
 	multisampling.sType = vk::StructureType::ePipelineMultisampleStateCreateInfo;
 	multisampling.sampleShadingEnable = VK_FALSE;
-	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-	multisampling.minSampleShading = 1.0f;
-	multisampling.pSampleMask = nullptr;
-	multisampling.alphaToCoverageEnable = VK_FALSE;
-	multisampling.alphaToOneEnable = VK_FALSE;
+	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1; 
 
 	vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
 	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
@@ -583,20 +582,13 @@ void createGraphicsPipeline() {
 	colorBlending.logicOpEnable = VK_FALSE;
 	colorBlending.logicOp = vk::LogicOp::eCopy;
 	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
-
-	std::array<vk::DynamicState, 2> dynamicStates = {
-		vk::DynamicState::eViewport,
-		vk::DynamicState::eLineWidth
-	};
-
-	vk::PipelineDynamicStateCreateInfo dynamicState{};
-	dynamicState.sType = vk::StructureType::ePipelineDynamicStateCreateInfo;
-	dynamicState.dynamicStateCount = dynamicStates.size();
-	dynamicState.pDynamicStates = dynamicStates.data();
+	colorBlending.pAttachments = &colorBlendAttachment; 
 
 	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = vk::StructureType::ePipelineLayoutCreateInfo;
+	pipelineLayoutInfo.setLayoutCount = 0;
+	pipelineLayoutInfo.pushConstantRangeCount = 0;
+
 	if (device.createPipelineLayout(&pipelineLayoutInfo, nullptr, &pipelineLayout) != vk::Result::eSuccess)
 	{
 		throw std::runtime_error("Failed to create pipeline layout!");
@@ -610,17 +602,14 @@ void createGraphicsPipeline() {
 	pipelineInfo.pInputAssemblyState = &inputAssembly;
 	pipelineInfo.pViewportState = &viewportState;
 	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = nullptr;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = nullptr;
+	pipelineInfo.pMultisampleState = &multisampling; 
+	pipelineInfo.pColorBlendState = &colorBlending; 
 
 	pipelineInfo.layout = pipelineLayout;
 	pipelineInfo.renderPass = renderPass;
 	pipelineInfo.subpass = 0;
 
-	pipelineInfo.basePipelineHandle = nullptr;
-	pipelineInfo.basePipelineIndex = -1;
+	pipelineInfo.basePipelineHandle = nullptr; 
 
 	auto result = device.createGraphicsPipeline(nullptr, pipelineInfo);
 	if (result.result != vk::Result::eSuccess) {
@@ -654,8 +643,8 @@ void createRenderPass() {
 	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 	dependency.dstSubpass = 0;
 	dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-	dependency.srcAccessMask = vk::AccessFlagBits::eNone;
 	dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+	dependency.srcAccessMask = vk::AccessFlagBits::eNone;
 	dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
 
 	vk::RenderPassCreateInfo renderPassInfo{};
