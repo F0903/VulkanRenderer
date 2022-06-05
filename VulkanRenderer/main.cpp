@@ -459,11 +459,8 @@ void createSwapchain() {
 	if (device.createSwapchainKHR(&createInfo, nullptr, &swapchain) != vk::Result::eSuccess) {
 		throw std::runtime_error("Failed to create swapchain!");
 	}
-
-	device.getSwapchainImagesKHR(swapchain, &imageCount, nullptr);
-	swapchainImages.resize(imageCount);
-	device.getSwapchainImagesKHR(swapchain, &imageCount, swapchainImages.data());
-
+	 
+	swapchainImages = device.getSwapchainImagesKHR(swapchain);
 	swapchainImageFormat = surfaceFormat.format;
 	swapchainExtent = extent;
 }
