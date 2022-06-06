@@ -1,10 +1,6 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.hpp>
 
-#include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/vec4.hpp>
@@ -21,9 +17,10 @@
 #include <algorithm>
 #include <fstream>
 #include <span>
-#include <map>
+#include <map> 
 
-using namespace vk;
+import Validation;
+import Window;
 
 constexpr std::array<const char*, 1> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -33,17 +30,10 @@ constexpr std::array<const char*, 1> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
 
-#ifdef NDEBUG
-constexpr bool ENABLE_VALIDATION_LAYERS = false;
-#else
-constexpr bool ENABLE_VALIDATION_LAYERS = true;
-#endif // NDEBUG
-
 
 constexpr uint32_t WIDTH = 800, HEIGHT = 600;
 
-
-GLFWwindow* window;
+Window window(WIDTH, HEIGHT);
 
 vk::Instance instance;
 VkDebugUtilsMessengerEXT debugMessenger;
@@ -112,21 +102,6 @@ bool checkValidationLayerSupport() {
 	return true;
 }
 
-std::vector<const char*> getRequiredExtensions() {
-	uint32_t extensionsCount = 0;
-
-	const char** glfwExtensionNames;
-	glfwExtensionNames = glfwGetRequiredInstanceExtensions(&extensionsCount);
-
-	std::vector<const char*> extensions(glfwExtensionNames, glfwExtensionNames + extensionsCount);
-
-	if (ENABLE_VALIDATION_LAYERS) {
-		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-	}
-
-	return extensions;
-}
-
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -169,16 +144,6 @@ void setupDebugMessenger() {
 	}
 }
 
-void init() {
-	if (glfwInit() != GLFW_TRUE) {
-		throw std::runtime_error("GLFW could not init!");
-	}
-
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Test", nullptr, nullptr);
-}
-
-
 void createInstance() {
 	vk::ApplicationInfo appInfo{};
 	appInfo.sType = vk::StructureType::eApplicationInfo;
@@ -192,7 +157,7 @@ void createInstance() {
 	createInfo.sType = vk::StructureType::eInstanceCreateInfo;
 	createInfo.pApplicationInfo = &appInfo;
 
-	auto extensions = getRequiredExtensions();
+	auto extensions = window.GetRequiredVulkanExtensions();
 	createInfo.enabledExtensionCount = extensions.size();
 	createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -277,8 +242,8 @@ SwapChainSupportDetails querySwapchainSupport(const vk::PhysicalDevice& device) 
 	return details;
 }
 
-using SortedDeviceMap = std::multimap<int, PhysicalDevice, std::greater<int>>;
-const SortedDeviceMap scoreDevices(const std::span<PhysicalDevice> devices) {
+using SortedDeviceMap = std::multimap<int, vk::PhysicalDevice, std::greater<int>>;
+const SortedDeviceMap scoreDevices(const std::span<vk::PhysicalDevice> devices) {
 	SortedDeviceMap sortedDevices;
 	for (const auto& device : devices)
 	{
@@ -329,12 +294,11 @@ vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilites) {
 		return capabilites.currentExtent;
 	}
 
-	int width, height;
-	glfwGetFramebufferSize(window, &width, &height);
+	auto [width, height] = window.GetFramebufferSize();
 
 	vk::Extent2D actualExtent = {
-		static_cast<uint32_t>(width),
-		static_cast<uint32_t>(height)
+		width,
+		height
 	};
 
 	const auto minExtent = capabilites.minImageExtent;
@@ -410,7 +374,7 @@ void createLogicalDevice() {
 }
 
 void createSurface() {
-	if (glfwCreateWindowSurface(instance, window, nullptr, (VkSurfaceKHR*)&surface) != VK_SUCCESS) {
+	if (window.CreateSurface(instance, surface) != vk::Result::eSuccess) {
 		throw std::runtime_error("Could not create window surface!");
 	}
 }
@@ -669,7 +633,7 @@ void createFramebuffers() {
 		};
 
 		vk::FramebufferCreateInfo framebufferInfo{};
-		framebufferInfo.sType = StructureType::eFramebufferCreateInfo;
+		framebufferInfo.sType = vk::StructureType::eFramebufferCreateInfo;
 		framebufferInfo.renderPass = renderPass;
 		framebufferInfo.attachmentCount = 1;
 		framebufferInfo.pAttachments = attachments;
@@ -821,12 +785,10 @@ void cleanup() {
 	}
 	instance.destroy();
 
-	glfwDestroyWindow(window);
-	glfwTerminate();
+	
 }
 
-int main() {
-	init();
+int main() { 
 	createInstance();
 	setupDebugMessenger();
 	createSurface();
@@ -841,8 +803,8 @@ int main() {
 	createCommandBuffer();
 	createSyncObjects();
 
-	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
+	while (!window.CloseRequested()) {
+		window.Poll();
 		drawFrame();
 	}
 
